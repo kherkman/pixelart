@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Art Editor</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f0f0f0;
+            margin: 0;
+        }
+        .editor-container {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+        #pixelCanvas {
+            border: 1px solid #333;
+            cursor: crosshair;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            background-color: #e0e0e0; /* Default background for empty cells */
+        }
+        .palette {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+            gap: 5px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #fff;
+            max-width: 200px; /* Prevent palette from becoming too wide */
+        }
+        .palette-color {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #888;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            box-sizing: border-box;
+        }
+        .palette-color.selected {
+            border: 2px solid #0000ff;
+            box-shadow: 0 0 5px #0000ff;
+        }
+        .controls-main {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center; /* Vertically align items in this row */
+        }
+        .controls-secondary {
+            margin-top: 10px;
+             display: flex;
+            gap: 10px;
+        }
+
+        /* STYLES FOR BUTTONS AND BUTTON-LIKE LABELS */
+        button, .button-like-label, select {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            background-color: #e9e9e9;
+            cursor: pointer;
+            border-radius: 4px;
+            display: inline-block; /* Ensures label behaves like a button for padding/sizing */
+            text-decoration: none; /* Remove potential underline from labels */
+            text-align: center;    /* Center text within the 'button' */
+            line-height: normal;   /* Default line height */
+            box-sizing: border-box; /* Include padding and border in the element's total width and height */
+            vertical-align: middle; /* Align nicely with other inline-block elements */
+        }
+        button:hover, .button-like-label:hover, select:hover {
+            background-color: #dcdcdc;
+        }
+        /* END OF BUTTON STYLES */
+
+        .color-input-area {
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+        }
+        .color-input-area label, .color-input-area input {
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        .char-display {
+            font-size: 0.8em;
+            color: #555;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 120px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -60px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pixel Art Editor</h1>
+
+    <div class="controls-main">
+        <label for="gridSizeSelect">Grid Size:</label>
+        <select id="gridSizeSelect">
+            <option value="16">16x16</option>
+            <option value="32">32x32</option>
+        </select>
+        <button id="clearCanvasButton">Clear Canvas</button>
+    </div>
+
+    <div class="editor-container">
+        <canvas id="pixelCanvas"></canvas>
+        <div class="palette-controls">
+            <div class="palette" id="colorPalette">
+                <!-- Palette will be populated by JS -->
+            </div>
+            <div class="color-input-area">
+                <p><strong>Selected: <span id="selectedCharDisplay"></span> <span id="selectedHexDisplay"></span></strong></p>
+                <div>
+                    <label for="charInput">Char:</label>
+                    <input type="text" id="charInput" maxlength="1" size="2">
+                </div>
+                <div>
+                    <label for="hexInput">Hex:</label>
+                    <input type="color" id="hexInput" value="#FFFFFF">
+                </div>
+                <div class="controls-secondary">
+                    <button id="addColorButton">Add/Update</button>
+                    <button id="removeColorButton" class="tooltip">Remove
+                        <span class="tooltiptext">Removes color matching current Char input</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls-main">
+        <button id="exportJsButton">Export as JS</button>
+        <label for="importJsInput" class="button-like-label"> <!-- This label is styled -->
+            Import JS File
+            <input type="file" id="importJsInput" accept=".js" style="display: none;">
+        </label>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('pixelCanvas');
+        const ctx = canvas.getContext('2d');
+        const colorPaletteContainer = document.getElementById('colorPalette');
+        const exportJsButton = document.getElementById('exportJsButton');
+        const importJsInput = document.getElementById('importJsInput');
+        const clearCanvasButton = document.getElementById('clearCanvasButton');
+        const gridSizeSelect = document.getElementById('gridSizeSelect');
+
+        const charInput = document.getElementById('charInput');
+        const hexInput = document.getElementById('hexInput');
+        const addColorButton = document.getElementById('addColorButton');
+        const removeColorButton = document.getElementById('removeColorButton');
+        const selectedCharDisplay = document.getElementById('selectedCharDisplay');
+        const selectedHexDisplay = document.getElementById('selectedHexDisplay');
+
+        let currentGridSize = 16; // Default grid size
+        const PIXEL_DISPLAY_SIZE = 15; // How large each "pixel" is rendered on screen
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.mozImageSmoothingEnabled = false;
+        ctx.webkitImageSmoothingEnabled = false;
+        ctx.msImageSmoothingEnabled = false;
+
+        let artData = [];
+        let palette = {
+            ' ': '#00000000', 'W': '#FFFFFF', 'L': '#D3D3D3',
+            'P': '#FFC0CB', 'E': '#333333', 'R': '#FF0000', 'T': '#F5F5F5'
+        };
+        let selectedColorChar = 'W';
+
+        const default16x16Art = [
+            "                ","      WWWW      ","    WWWWWWWW    ","   WW RRRR WW   ",
+            "  WW RRRRRR WW  "," WW RRRRRRRR WW "," WW RRRRRRRR WW "," WW  RRRRRR  WW ",
+            " WW   RRRR   WW ","  WW   RR   WW  ","   WW       WW  ","    WWWWWWWW    ",
+            "      WWWW      ","                ","                ","                "
+        ];
+        const default32x32BunnyArt = [
+            "                                ","                                ","                                ",
+            "            LLLLLL              ","           LWPPPPWL             ","          LWPPPPPPWL            ",
+            "          LWPPPPPPWL            ","          LWWPPPPWWL            ","           LWWWWWWL             ",
+            "            LWWWWL              ","             LWWL   LLLLLL      ","  LLLLLL      LW   LP PPPWL     ",
+            " LP PPPWL     LWW LLP PPPPWL    ","LP PPPPPWL    LWWWLWPPPPPPWL    ","LWWPPPPPWL    LWWWWWWPPPPWWL    ",
+            " LWWWWWWWL    LWWWWWWWWWWWWL    ","  LWWWWWWL   LWWWWWWWWWWWWL     ","   LWWWWWWWWWWWWWWWWWWWWL       ",
+            "    LWWWWWWWWWWWWWWWWWWL        ","     LWWWWWWWWWWWWWWWWL         ","      LWWWWWWWWWWWWWL           ",
+            "      LWWWEPWWWEWWWWL           ","      LWWWWPWWWWWWWWL           ","       LWWWWWWWWWWWLLLLL        ",
+            "        LWWWWWWWWWLWTTTWL       ","         LWWWWWWW LWWWWL        ","          LWWWWWWWWWWL          ",
+            "         LLWWWWWWWWWWLL         ","        LWWWLLLLLLWWWL          ","        LWL        LWL          ",
+            "                                ","                                "
+        ];
+
+        function initializeArtData(size, fillChar = ' ') {
+            artData = Array(size).fill(null).map(() => Array(size).fill(fillChar));
+        }
+
+        function resizeArtData(newSize) {
+            const oldSize = artData.length > 0 ? artData.length : 0; 
+            const newArt = Array(newSize).fill(null).map(() => Array(newSize).fill(' '));
+            const minSize = Math.min(oldSize, newSize);
+            for (let y = 0; y < minSize; y++) {
+                for (let x = 0; x < minSize; x++) {
+                    if (artData[y] && artData[y][x]) { newArt[y][x] = artData[y][x]; }
+                }
+            }
+            artData = newArt;
+            currentGridSize = newSize;
+        }
+
+        function updateCanvasDimensions() {
+            canvas.width = currentGridSize * PIXEL_DISPLAY_SIZE;
+            canvas.height = currentGridSize * PIXEL_DISPLAY_SIZE;
+            ctx.imageSmoothingEnabled = false; ctx.mozImageSmoothingEnabled = false;
+            ctx.webkitImageSmoothingEnabled = false; ctx.msImageSmoothingEnabled = false;
+        }
+
+        function loadArtStrings(stringArray) {
+            // Robust check for stringArray format
+            if (!Array.isArray(stringArray) || stringArray.length === 0 || 
+                typeof stringArray[0] !== 'string') { // Allow stringArray[0].length === 0 for empty lines in potentially non-square art
+                console.warn("Imported artData is not in the expected format (array of strings). Initializing empty grid for current size.");
+                initializeArtData(currentGridSize);
+                return;
+            }
+
+            const importedArtHeight = stringArray.length;
+            const newArtData = Array(currentGridSize).fill(null).map(() => Array(currentGridSize).fill(' '));
+            
+            const rowsToCopy = Math.min(importedArtHeight, currentGridSize);
+            for (let y = 0; y < rowsToCopy; y++) {
+                if (typeof stringArray[y] === 'string') { // Ensure row is a string
+                    const importedRowWidth = stringArray[y].length;
+                    const colsToCopy = Math.min(importedRowWidth, currentGridSize);
+                    for (let x = 0; x < colsToCopy; x++) {
+                        newArtData[y][x] = stringArray[y][x];
+                    }
+                }
+            }
+            artData = newArtData;
+        }
+
+        function drawPixel(x, y, char) {
+            const color = palette[char] || canvas.style.backgroundColor || '#e0e0e0';
+            if (char === ' ' || color === '#00000000') {
+                ctx.clearRect(x * PIXEL_DISPLAY_SIZE, y * PIXEL_DISPLAY_SIZE, PIXEL_DISPLAY_SIZE, PIXEL_DISPLAY_SIZE);
+            } else {
+                ctx.fillStyle = color;
+                ctx.fillRect(x * PIXEL_DISPLAY_SIZE, y * PIXEL_DISPLAY_SIZE, PIXEL_DISPLAY_SIZE, PIXEL_DISPLAY_SIZE);
+            }
+        }
+
+        function renderCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = canvas.style.backgroundColor || '#e0e0e0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for (let y = 0; y < currentGridSize; y++) {
+                for (let x = 0; x < currentGridSize; x++) {
+                    drawPixel(x, y, (artData[y] && artData[y][x] !== undefined) ? artData[y][x] : ' ');
+                }
+            }
+        }
+
+        function updatePaletteDisplay() {
+            colorPaletteContainer.innerHTML = '';
+            Object.entries(palette).forEach(([char, hex]) => {
+                const colorDiv = document.createElement('div');
+                colorDiv.classList.add('palette-color');
+                colorDiv.style.backgroundColor = (char === ' ' ? 'transparent' : hex);
+                if (char === ' ') {
+                    colorDiv.style.backgroundImage = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Crect width='5' height='5' fill='%23ccc'/%3E%3Crect x='5' y='5' width='5' height='5' fill='%23ccc'/%3E%3C/svg%3E\")";
+                    colorDiv.innerHTML = `<span class="char-display" title="Eraser (Space)">E</span>`; 
+                } else { colorDiv.innerHTML = `<span class="char-display" title="${char}: ${hex}">${char}</span>`; }
+                if (char === selectedColorChar) { colorDiv.classList.add('selected'); }
+                colorDiv.addEventListener('click', () => {
+                    selectedColorChar = char; charInput.value = char;
+                    hexInput.value = palette[char] === '#00000000' ? '#FFFFFF' : palette[char];
+                    updateSelectedDisplay(); updatePaletteDisplay();
+                });
+                colorPaletteContainer.appendChild(colorDiv);
+            });
+            updateSelectedDisplay();
+        }
+
+        function updateSelectedDisplay() {
+            selectedCharDisplay.textContent = selectedColorChar === ' ' ? '(Eraser)' : selectedColorChar;
+            selectedHexDisplay.textContent = palette[selectedColorChar] === '#00000000' ? "(Transparent)" : (palette[selectedColorChar] || 'N/A');
+        }
+
+        gridSizeSelect.addEventListener('change', (event) => {
+            const newSize = parseInt(event.target.value);
+            if (newSize !== currentGridSize) {
+                if (confirm(`Change grid to ${newSize}x${newSize}? Existing art will be resized (cropped if shrinking, padded if expanding).`)) {
+                    resizeArtData(newSize); updateCanvasDimensions();
+                    let artWasEmpty = artData.every(row => row.every(cell => cell === ' '));
+                    if (artWasEmpty) {
+                        loadArtStrings(newSize === 16 ? default16x16Art : default32x32BunnyArt);
+                    }
+                    renderCanvas();
+                } else { gridSizeSelect.value = currentGridSize; }
+            }
+        });
+
+        canvas.addEventListener('mousedown', handleDraw);
+        canvas.addEventListener('mousemove', (event) => { if (event.buttons === 1) { handleDraw(event); } });
+
+        function handleDraw(event) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((event.clientX - rect.left) / PIXEL_DISPLAY_SIZE);
+            const y = Math.floor((event.clientY - rect.top) / PIXEL_DISPLAY_SIZE);
+            if (x >= 0 && x < currentGridSize && y >= 0 && y < currentGridSize) {
+                if (!artData[y]) artData[y] = Array(currentGridSize).fill(' ');
+                if (artData[y][x] !== selectedColorChar) {
+                    artData[y][x] = selectedColorChar; drawPixel(x, y, selectedColorChar);
+                }
+            }
+        }
+
+        addColorButton.addEventListener('click', () => {
+            const char = charInput.value.trim(); const hex = hexInput.value;
+            if (char && char.length === 1) {
+                palette[char] = (char === ' ' && hex !== '#00000000') ? '#00000000' : hex;
+                if (selectedColorChar === ' ' || !(selectedColorChar in palette)) { selectedColorChar = char; }
+                updatePaletteDisplay(); updateSelectedDisplay();
+            } else { alert("Character must be a single character."); }
+        });
+
+        removeColorButton.addEventListener('click', () => {
+            const charToRemove = charInput.value.trim();
+            if (charToRemove && charToRemove in palette && charToRemove !== ' ') {
+                delete palette[charToRemove];
+                if (selectedColorChar === charToRemove) {
+                    selectedColorChar = Object.keys(palette).find(k => k !== ' ') || ' ';
+                    charInput.value = selectedColorChar;
+                    hexInput.value = palette[selectedColorChar] === '#00000000' ? '#FFFFFF' : palette[selectedColorChar];
+                }
+                updatePaletteDisplay(); updateSelectedDisplay();
+            } else if (charToRemove === ' ') { alert("Cannot remove Eraser. Select other color via Char input."); }
+            else { alert("Character to remove not found in palette. Enter char in 'Char:' input."); }
+        });
+
+        exportJsButton.addEventListener('click', () => {
+            const artDataStrings = artData.map(row => row.join(''));
+            const jsContent = `// Pixel Art Data - Generated by Pixel Art Editor\n// Grid Size: ${currentGridSize}x${currentGridSize}\n\nconst artGridSize = ${currentGridSize};\nconst artData = ${JSON.stringify(artDataStrings, null, 2)};\nconst palette = ${JSON.stringify(palette, null, 2)};\n\n/* Example Usage:\nwindow.onload = function() { ... }; */`;
+            const blob = new Blob([jsContent], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url;
+            a.download = `pixelArt_${currentGridSize}x${currentGridSize}.js`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+        });
+
+        importJsInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const fileContent = e.target.result;
+                    const importedModule = new Function(`${fileContent}; return { artData, palette, artGridSize };`)();
+
+                    if (!importedModule.artData || !importedModule.palette) {
+                        throw new Error("File does not contain 'artData' or 'palette'.");
+                    }
+
+                    let newEditorGridSize = currentGridSize; // Default to current editor size
+                    let importedArtActualHeight = 0;
+                    let importedArtIsSquareAndSupported = false;
+
+                    if (Array.isArray(importedModule.artData) && importedModule.artData.length > 0) {
+                        importedArtActualHeight = importedModule.artData.length;
+                        if (typeof importedModule.artData[0] === 'string' && 
+                            importedArtActualHeight === importedModule.artData[0].length &&
+                            (importedArtActualHeight === 16 || importedArtActualHeight === 32)) {
+                            importedArtIsSquareAndSupported = true;
+                        }
+                    }
+
+                    // Determine the target editor grid size
+                    if (importedModule.artGridSize && (importedModule.artGridSize === 16 || importedModule.artGridSize === 32)) {
+                        newEditorGridSize = importedModule.artGridSize;
+                    } else if (importedArtIsSquareAndSupported) {
+                        newEditorGridSize = importedArtActualHeight;
+                    } else if (importedModule.artGridSize || importedArtActualHeight > 0) {
+                        console.warn(`Imported art size (artGridSize: ${importedModule.artGridSize}, artData dimensions: ${importedArtActualHeight}x${importedModule.artData && importedModule.artData[0] ? importedModule.artData[0].length : 'N/A'}) is not a standard 16x16 or 32x32, or not square. Editor will not resize. Art will be fitted to current grid.`);
+                    }
+
+                    // If a change in editor grid size is determined and supported
+                    if (newEditorGridSize !== currentGridSize && gridSizeSelect.querySelector(`option[value="${newEditorGridSize}"]`)) {
+                        currentGridSize = newEditorGridSize;
+                        gridSizeSelect.value = currentGridSize;
+                        updateCanvasDimensions();
+                        initializeArtData(currentGridSize); // Prepare blank artData of new size
+                    } else if (newEditorGridSize !== currentGridSize) {
+                        console.warn(`Cannot switch editor to determined size ${newEditorGridSize}x${newEditorGridSize}. Using current size ${currentGridSize}x${currentGridSize}.`);
+                    }
+                    // At this point, currentGridSize is the final size for the editor grid.
+
+                    loadArtStrings(importedModule.artData); // Fit imported art strings into currentGridSize artData
+                    palette = importedModule.palette;
+                    if (!(' ' in palette)) { palette[' '] = '#00000000'; } // Ensure eraser exists
+
+                    selectedColorChar = Object.keys(palette).find(k => k !== ' ') || ' ';
+                    charInput.value = selectedColorChar;
+                    hexInput.value = palette[selectedColorChar] === '#00000000' ? '#FFFFFF' : palette[selectedColorChar];
+
+                    updatePaletteDisplay();
+                    renderCanvas();
+                    alert('Pixel art imported successfully!');
+
+                } catch (error) {
+                    console.error("Error importing JS file:", error);
+                    alert(`Error importing file: ${error.message}`);
+                } finally {
+                    importJsInput.value = ''; // Reset file input
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        clearCanvasButton.addEventListener('click', () => {
+            if (confirm("Are you sure you want to clear the canvas? This cannot be undone.")) {
+                initializeArtData(currentGridSize);
+                loadArtStrings(currentGridSize === 16 ? default16x16Art : default32x32BunnyArt);
+                renderCanvas();
+            }
+        });
+
+        function initializeEditor() {
+            currentGridSize = parseInt(gridSizeSelect.value);
+            updateCanvasDimensions();
+            loadArtStrings(currentGridSize === 16 ? default16x16Art : default32x32BunnyArt);
+            updatePaletteDisplay(); renderCanvas();
+            selectedColorChar = Object.keys(palette).find(k => k !== ' ') || ' ';
+            charInput.value = selectedColorChar;
+            hexInput.value = palette[selectedColorChar] === '#00000000' ? '#FFFFFF' : palette[selectedColorChar];
+            updateSelectedDisplay();
+        }
+
+        initializeEditor();
+    </script>
+</body>
+</html>
